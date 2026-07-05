@@ -5,11 +5,15 @@ Main workflow, launched from  Library > Plug-in Extras >
 
 For every selected photo it looks at the assigned keywords and, for each
 keyword, makes sure a collection with the same name exists (creating it when it
-does not) and adds the photo to that collection.
+does not) and adds the photo to that collection. Works on any number of
+selected photos at once.
 
-Options (remembered between runs):
-  * Group the collections inside a collection set.
-  * Also use the parent/ancestor keywords, not just the ones directly applied.
+Two ways to organize the collections (chosen at run time):
+  * Flat       – one collection per keyword name.
+  * Hierarchy  – recreate the keyword tree as nested collection sets, with the
+                 keyword itself as a collection inside its parent set.
+
+Options are remembered between runs.
 ------------------------------------------------------------------------------]]
 
 local LrApplication      = import 'LrApplication'
@@ -24,6 +28,7 @@ local LrProgressScope    = import 'LrProgressScope'
 local prefs = LrPrefs.prefsForPlugin()
 
 -- First-run defaults.
+if prefs.structureMode  == nil then prefs.structureMode  = 'flat' end -- 'flat' | 'hierarchy'
 if prefs.groupInSet     == nil then prefs.groupInSet     = false end
 if prefs.setName        == nil then prefs.setName        = 'Keywords' end
 if prefs.includeParents == nil then prefs.includeParents = false end
@@ -49,15 +54,15 @@ local function splitKeywordString(s)
 	return out
 end
 
--- Collect the keyword names to use for one photo, de-duplicated.
--- Returns an ordered array of { name = <string> }.
+-- Collect the keyword names to use for one photo, de-duplicated (ordered array
+-- of { name = <string> }).
 --
 -- This LR build rejects the raw-metadata key "keywordTags", so we read the
 -- formatted (string) metadata instead:
 --   * keywordTags          -> the keywords directly applied to the photo.
 --   * keywordTagsForExport -> also includes ancestor keywords / synonyms that
---                             are flagged to export, which is what we use when
---                             "Also use parent keywords" is enabled.
+--                             are flagged to export (used for "parent keywords"
+--                             in flat mode).
 local function keywordsForPhoto(photo, includeParents)
 	local key = includeParents and 'keywordTagsForExport' or 'keywordTags'
 	local str = photo:getFormattedMetadata(key)
@@ -72,16 +77,55 @@ local function keywordsForPhoto(photo, includeParents)
 	return result
 end
 
+-- Walk the catalog's keyword tree and map each keyword name (lower-cased) to the
+-- ordered list of its ancestor names (top-level first, immediate parent last).
+-- On duplicate names the first one encountered wins.
+local function buildKeywordAncestry(catalog)
+	local index = {}
+
+	local function walk(keyword, ancestors)
+		local name = trim(keyword:getName())
+		if name ~= '' then
+			local key = name:lower()
+			if index[key] == nil then
+				index[key] = ancestors
+			end
+		end
+
+		-- Path passed down to children = ancestors + this keyword.
+		local childAncestors = {}
+		for _, a in ipairs(ancestors) do childAncestors[#childAncestors + 1] = a end
+		childAncestors[#childAncestors + 1] = name
+
+		local children = keyword:getChildren()
+		if children then
+			for _, child in ipairs(children) do
+				walk(child, childAncestors)
+			end
+		end
+	end
+
+	local tops = catalog:getKeywords()
+	if tops then
+		for _, top in ipairs(tops) do
+			walk(top, {})
+		end
+	end
+	return index
+end
+
 --------------------------------------------------------------------------------
 -- Options dialog
 --------------------------------------------------------------------------------
 
--- Build a de-duplicated preview of the keyword names found across all the
--- selected photos, honouring the "include parents" toggle.
-local function previewKeywords(photos, includeParents)
+-- De-duplicated preview of the keyword names found across all selected photos.
+-- In hierarchy mode only the directly-applied (leaf) keywords are listed, since
+-- the parents become collection sets automatically.
+local function previewKeywords(photos, includeParents, mode)
+	local effectiveParents = (mode ~= 'hierarchy') and includeParents or false
 	local names, seen = {}, {}
 	for _, photo in ipairs(photos) do
-		for _, entry in ipairs(keywordsForPhoto(photo, includeParents)) do
+		for _, entry in ipairs(keywordsForPhoto(photo, effectiveParents)) do
 			if not seen[entry.name] then
 				seen[entry.name] = true
 				names[#names + 1] = entry.name
@@ -99,15 +143,18 @@ local function showOptionsDialog(photos)
 	local chosen
 	LrFunctionContext.callWithContext('ktc_options', function(context)
 		local props = LrBinding.makePropertyTable(context)
+		props.structureMode   = prefs.structureMode
 		props.groupInSet      = prefs.groupInSet
 		props.setName         = prefs.setName
 		props.includeParents  = prefs.includeParents
-		props.keywordPreview  = previewKeywords(photos, prefs.includeParents)
+		props.keywordPreview  = previewKeywords(photos, prefs.includeParents, prefs.structureMode)
 
-		-- Keep the preview in sync with the "parent keywords" checkbox.
-		props:addObserver('includeParents', function()
-			props.keywordPreview = previewKeywords(photos, props.includeParents)
-		end)
+		local function refreshPreview()
+			props.keywordPreview =
+				previewKeywords(photos, props.includeParents, props.structureMode)
+		end
+		props:addObserver('includeParents', refreshPreview)
+		props:addObserver('structureMode', refreshPreview)
 
 		local f = LrView.osFactory()
 		local contents = f:column {
@@ -115,29 +162,45 @@ local function showOptionsDialog(photos)
 			spacing = f:control_spacing(),
 
 			f:static_text {
-				title = 'Each selected photo will be added to a collection\n'
-				      .. 'named after every keyword it carries. Missing\n'
-				      .. 'collections are created automatically.',
+				title = 'Each selected photo is added to a collection named after\n'
+				      .. 'every keyword it carries. Missing collections (and sets)\n'
+				      .. 'are created automatically.',
 				height_in_lines = 3,
 			},
 
-			f:checkbox {
-				title = 'Also use parent keywords',
-				value = LrView.bind 'includeParents',
+			f:static_text { title = 'Organize collections as:' },
+			f:radio_button {
+				title = 'Flat  (one collection per keyword)',
+				value = LrView.bind 'structureMode',
+				checked_value = 'flat',
+			},
+			f:radio_button {
+				title = 'Mirror keyword hierarchy  (nested collection sets)',
+				value = LrView.bind 'structureMode',
+				checked_value = 'hierarchy',
 			},
 
-			f:static_text {
-				title = 'Keywords detected:',
+			f:checkbox {
+				title = 'Also use parent keywords (flat mode only)',
+				value = LrView.bind 'includeParents',
+				enabled = LrView.bind {
+					key = 'structureMode',
+					transform = function(v) return v == 'flat' end,
+				},
 			},
+
+			f:spacer { height = 6 },
+
+			f:static_text { title = 'Keywords detected:' },
 			f:static_text {
 				title = LrView.bind 'keywordPreview',
-				width_in_chars = 44,
+				width_in_chars = 46,
 				height_in_lines = 4,
 			},
 
 			f:row {
 				f:checkbox {
-					title = 'Group collections in a set named:',
+					title = 'Place everything inside a set named:',
 					value = LrView.bind 'groupInSet',
 				},
 				f:edit_field {
@@ -155,10 +218,12 @@ local function showOptionsDialog(photos)
 		}
 
 		if result == 'ok' then
+			prefs.structureMode  = props.structureMode
 			prefs.groupInSet     = props.groupInSet
 			prefs.setName        = trim(props.setName)
 			prefs.includeParents = props.includeParents
 			chosen = {
+				structureMode  = prefs.structureMode,
 				groupInSet     = prefs.groupInSet,
 				setName        = prefs.setName,
 				includeParents = prefs.includeParents,
@@ -194,68 +259,112 @@ LrTasks.startAsyncTask(function()
 			return
 		end
 
+		-- For hierarchy mode we need the keyword tree. Build it up front (reads
+		-- only) so a failure here aborts cleanly before any catalog changes.
+		local ancestry = {}
+		if opts.structureMode == 'hierarchy' then
+			local ok, res = pcall(buildKeywordAncestry, catalog)
+			if not ok then
+				LrDialogs.message('Add to Keyword Collection',
+					'Could not read the keyword hierarchy: ' .. tostring(res), 'error')
+				return
+			end
+			ancestry = res
+		end
+
 		local progress = LrProgressScope {
 			title = 'Adding photos to keyword collections',
 			functionContext = context,
 		}
 
-		-- Caches so we only touch each collection / set once.
+		-- Caches so each set / collection is created at most once.
+		local setCache        = {}
 		local collectionCache = {}
-		local createdCollections = 0
 
 		local stats = {
 			photosProcessed = 0,
 			photosSkipped   = 0, -- had no keywords
 			additions       = 0, -- photo↔collection links made
+			errors          = 0, -- keywords that could not be turned into a collection
 		}
 
 		local ok, err = catalog:withWriteAccessDo('Add to Keyword Collection', function()
 
-			-- Resolve the parent collection set once, if grouping is enabled.
-			local parentSet = nil
+			-- The optional top-level container set, shared by both modes.
+			local baseSet, baseKey = nil, 'root'
 			if opts.groupInSet then
-				parentSet = catalog:createCollectionSet(opts.setName, nil, true)
+				baseSet = catalog:createCollectionSet(opts.setName, nil, true)
+				baseKey = 'set:' .. opts.setName:lower()
 			end
 
-			local function getCollection(name)
-				if collectionCache[name] then
-					return collectionCache[name]
+			-- Ensure the nested collection-set path for a list of ancestor names,
+			-- returning the deepest set and its cache key.
+			local function ensureSetPath(ancestors)
+				local parent, pathKey = baseSet, baseKey
+				for _, aname in ipairs(ancestors) do
+					if trim(aname) ~= '' then
+						pathKey = pathKey .. '/' .. aname:lower()
+						local s = setCache[pathKey]
+						if not s then
+							s = catalog:createCollectionSet(aname, parent, true)
+							setCache[pathKey] = s
+						end
+						parent = s
+					end
 				end
-				-- createCollection returns the existing collection when
-				-- canReturnExisting is true, so this both finds and creates.
+				return parent, pathKey
+			end
+
+			-- Ensure a collection with the given name under a parent set.
+			local function ensureCollection(name, parentSet, cacheKey)
+				local existing = collectionCache[cacheKey]
+				if existing then return existing end
 				local coll = catalog:createCollection(name, parentSet, true)
-				collectionCache[name] = coll
+				collectionCache[cacheKey] = coll
 				return coll
+			end
+
+			-- Resolve the target collection for one keyword name.
+			local function collectionFor(name)
+				if opts.structureMode == 'hierarchy' then
+					local ancestors = ancestry[name:lower()] or {}
+					local parentSet, pathKey = ensureSetPath(ancestors)
+					return ensureCollection(name, parentSet, pathKey .. '/coll:' .. name:lower())
+				else
+					return ensureCollection(name, baseSet, baseKey .. '/coll:' .. name:lower())
+				end
 			end
 
 			for i, photo in ipairs(photos) do
 				if progress:isCanceled() then break end
 
-				local kws = keywordsForPhoto(photo, opts.includeParents)
+				-- In hierarchy mode use only the directly-applied keywords.
+				local useParents = (opts.structureMode == 'flat') and opts.includeParents or false
+				local kws = keywordsForPhoto(photo, useParents)
 
 				if #kws == 0 then
 					stats.photosSkipped = stats.photosSkipped + 1
 				else
 					stats.photosProcessed = stats.photosProcessed + 1
 					for _, entry in ipairs(kws) do
-						local coll = getCollection(entry.name)
-						if coll then
+						local okColl, coll = pcall(collectionFor, entry.name)
+						if okColl and coll then
 							coll:addPhotos({ photo })
 							stats.additions = stats.additions + 1
+						else
+							stats.errors = stats.errors + 1
 						end
 					end
 				end
 
 				progress:setPortionComplete(i, #photos)
 			end
-		end, { timeout = 60 })
+		end, { timeout = 120 })
 
-		-- Count how many of the cached collections were freshly created is not
-		-- directly available from the SDK; report the ones we touched instead.
 		local collectionsTouched = 0
-		for _ in pairs(collectionCache) do
-			collectionsTouched = collectionsTouched + 1
-		end
+		for _ in pairs(collectionCache) do collectionsTouched = collectionsTouched + 1 end
+		local setsTouched = 0
+		for _ in pairs(setCache) do setsTouched = setsTouched + 1 end
 
 		progress:done()
 
@@ -267,11 +376,16 @@ LrTasks.startAsyncTask(function()
 
 		local msg = string.format(
 			'%d photo(s) processed.\n' ..
-			'%d collection link(s) made across %d keyword collection(s).',
-			stats.photosProcessed, stats.additions, collectionsTouched)
+			'%d link(s) made across %d collection(s)%s.',
+			stats.photosProcessed, stats.additions, collectionsTouched,
+			(setsTouched > 0) and (' in ' .. setsTouched .. ' set(s)') or '')
 		if stats.photosSkipped > 0 then
 			msg = msg .. string.format('\n%d photo(s) had no keywords and were skipped.',
 				stats.photosSkipped)
+		end
+		if stats.errors > 0 then
+			msg = msg .. string.format('\n%d keyword(s) could not be turned into a collection.',
+				stats.errors)
 		end
 
 		LrDialogs.message('Add to Keyword Collection', msg, 'info')

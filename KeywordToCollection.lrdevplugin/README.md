@@ -12,7 +12,8 @@ already exist.
 
 ## Use
 
-1. Select one or more photos in the Library grid.
+1. Select **one or more** photos in the Library grid — the command processes
+   the entire selection at once.
 2. **Library ▸ Plug-in Extras ▸ Add to Keyword Collection…**
    (also available under **File ▸ Plug-in Extras**).
 3. Choose the options and click **Run**.
@@ -20,14 +21,25 @@ already exist.
 For every selected photo, each keyword becomes a collection of the same name.
 A photo tagged `Chanterelle` and `Autumn` lands in the `Chanterelle`
 collection and the `Autumn` collection; any that don't exist are created.
+Photos with no keywords are skipped (and counted in the summary).
 
 ## Options
 
-- **Also use parent keywords** — walk up the keyword hierarchy so ancestor
-  keywords get their own collections too (off by default; only the keywords
-  directly applied to the photo are used).
-- **Group collections in a set named…** — put every created collection inside
-  a single collection set instead of at the top level of the catalog.
+**Organize collections as:**
+
+- **Flat** — one collection per keyword name (all at the top level, or inside
+  the set below).
+- **Mirror keyword hierarchy** — recreate the keyword tree as nested
+  *collection sets*, with the keyword itself as a collection inside its parent
+  set. Example: keyword `Amanita phalloides` under parent `grzyb` produces a
+  collection set `grzyb` containing a collection `Amanita phalloides`.
+
+Other options:
+
+- **Also use parent keywords** *(flat mode only)* — walk up the keyword
+  hierarchy so ancestor keywords get their own collections too (off by default).
+- **Place everything inside a set named…** — nest all created collections/sets
+  under a single top-level collection set instead of the catalog root.
 
 ## Notes
 
