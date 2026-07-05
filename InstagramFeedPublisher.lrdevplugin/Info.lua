@@ -1,6 +1,11 @@
 --[[----------------------------------------------------------------------------
 Info.lua
 Plugin manifest for the Instagram Feed Publisher.
+
+This plugin is a Lightroom *Publish Service*: it appears in the Library's
+Publish Services panel (like the built-in Flickr publisher). You add photos to
+its published collection and click Publish; Lightroom renders each photo and the
+plugin posts it to your Instagram feed, then tracks what has been published.
 ------------------------------------------------------------------------------]]
 
 return {
@@ -11,32 +16,16 @@ return {
 	LrToolkitIdentifier = 'pl.cervello.instagramfeedpublisher',
 	LrPluginName = 'Instagram Feed Publisher',
 
-	-- Where the user enters the Instagram Graph API token, account id and the
-	-- image-host credentials.
+	-- Global credentials (access token, account id, Imgur Client ID) live here,
+	-- in  File > Plug-in Manager > Instagram Feed Publisher.
 	LrPluginInfoProvider = 'PluginInfoProvider.lua',
 
-	-- Custom metadata fields recording what was published and where.
-	LrMetadataProvider = 'MetadataDefinition.lua',
-
-	-- Menu entry under  Library > Plug-in Extras.
-	-- (Plain "..." instead of the Unicode ellipsis so that external tools such
-	--  as AutoHotkey can match the menu title reliably.)
-	LrLibraryMenuItems = {
-		{
-			title = 'Publish to Instagram Feed...',
-			file = 'PublishToInstagram.lua',
-		},
+	-- The Publish Service itself (shown in the Library "Publish Services" panel).
+	LrExportServiceProvider = {
+		title = 'Instagram Feed',
+		file = 'InstagramPublishServiceProvider.lua',
 	},
 
-	-- Same command also under  File > Plug-in Extras  (a second access point,
-	-- since the SDK does not allow adding to the right-click context menu).
-	LrExportMenuItems = {
-		{
-			title = 'Publish to Instagram Feed...',
-			file = 'PublishToInstagram.lua',
-		},
-	},
-
-	VERSION = { major = 1, minor = 0, revision = 0 },
+	VERSION = { major = 2, minor = 0, revision = 0 },
 
 }

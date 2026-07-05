@@ -1,23 +1,28 @@
 # Instagram Feed Publisher — Lightroom Classic plugin
 
-Publish the selected photo (or a carousel of up to 10) straight to your
-**Instagram feed** from Lightroom Classic — review the caption, hit Publish, and
-the plugin renders, uploads, and posts through the official **Instagram Graph
-API**.
+A Lightroom Classic **Publish Service** that posts photos to your **Instagram
+feed** through the official **Instagram Graph API** — just like the built-in
+Flickr publisher. Add photos to the published collection, click **Publish**, and
+Lightroom renders and uploads each one for you.
 
 ## What it does
 
-1. Select one photo (single post) or several (carousel) in the Library.
-2. Run **Library ▸ Plug-in Extras ▸ Publish to Instagram Feed…**
-3. Review/edit the caption (pre-filled from the photo's Title/Caption/Headline
-   plus your default hashtags).
-4. For each photo the plugin:
-   - renders a JPEG from Lightroom,
+1. Set up the **Instagram Feed** publish service once (see *Configure*).
+2. In the **Publish Services** panel, drag photos into the **Instagram Feed**
+   collection.
+3. Click **Publish**. For every photo that needs publishing, Lightroom renders a
+   JPEG and the plugin:
    - uploads it to an image host to get a public URL (see *Why an image host?*),
    - creates an Instagram **media container** referencing that URL,
-   - waits for Instagram to finish processing it.
-5. The container (or carousel) is **published**, and the resulting permalink is
-   written back into the photo's metadata.
+   - waits for Instagram to finish processing it,
+   - **publishes** it as a single feed post.
+4. Lightroom records the resulting **media id + permalink**, moves the photo to
+   *Published*, and marks it *Modified to re-publish* if you later edit the
+   title, caption or keywords.
+
+Each photo is posted as its **own single-image feed post**. The caption is taken
+from a photo metadata field you choose (Title / Caption / Headline) plus a shared
+hashtag template — there is no per-photo prompt, because publishing runs in bulk.
 
 ## Why an image host? (important)
 
@@ -80,12 +85,24 @@ Open **File ▸ Plug-in Manager ▸ Instagram Feed Publisher**.
    the anonymous-upload flavour).
 3. Copy the **Client ID** into the plugin.
 
-### Defaults
+## Create the publish service
 
-- **Exported long edge** — 1080 px (Instagram standard), 1440, or 2048 px.
-- **Pre-fill caption from metadata** — use the photo Title/Caption/Headline.
-- **Append hashtags** — added to the bottom of every caption.
-- **Record permalink** — write the post URL into the photo metadata.
+1. In the Library, find **Instagram Feed** in the **Publish Services** panel on
+   the left and click **Set Up…** (or right-click ▸ *Edit Settings*).
+2. In the service dialog:
+   - **Instagram connection** — shows your status; click *Verify connection*.
+   - **Caption** — pick which metadata field becomes the caption (Title /
+     Caption / Headline / nothing) and enter hashtags to append.
+   - **File Settings / Image Sizing** — pre-filled Instagram-ready (JPEG, sRGB,
+     fit within 1440 px). Adjust if you like.
+3. Click **Save**. An **Instagram Feed** collection appears under the service.
+
+## Publishing
+
+Drag photos into the **Instagram Feed** collection and click **Publish** (top of
+the grid). Published photos move to the *Published Photos* group; edit a
+published photo's title/caption/keywords and it moves to *Modified Photos to
+Re-Publish* — re-publishing creates a **new** post (Instagram has no edit API).
 
 ## Image guidelines
 
@@ -94,41 +111,14 @@ Instagram accepts JPEGs with an **aspect ratio between 4:5 (portrait) and 1.91:1
 be rejected. Recommended width is 1080 px. Captions allow up to **2,200
 characters** and **30 hashtags**.
 
-## Where results are written
-
-After a successful publish the plugin fills these custom metadata fields
-(Library Metadata panel, searchable):
-
-- **Instagram Media ID**
-- **Instagram Permalink**
-- **Instagram Published At**
-
-For a carousel the same values are written to every photo in the post.
-
-## Menu location & keyboard shortcut
-
-The command appears in **two** places (the Lightroom SDK does **not** allow
-plugins to add items to the right-click context menu):
-
-- **Library ▸ Plug-in Extras ▸ Publish to Instagram Feed...**
-- **File ▸ Plug-in Extras ▸ Publish to Instagram Feed...**
-
-### Keyboard shortcut (Windows)
-
-Lightroom has no SDK for plugin hotkeys. Use the bundled
-`LightroomIdentifyShortcut.ahk` ([AutoHotkey v2](https://www.autohotkey.com/)) as
-a template — copy it, point it at the menu title `Publish to Instagram Feed...`,
-and bind your own key.
-
-### Keyboard shortcut (macOS)
-
-**System Settings ▸ Keyboard ▸ Keyboard Shortcuts ▸ App Shortcuts ▸ +**, choose
-Adobe Lightroom, and enter the exact menu title `Publish to Instagram Feed...`.
-
 ## Notes & limitations
 
-- **Feed photos only.** Stories, Reels and video are out of scope.
-- **Carousels:** 2–10 photos, published as one post with a shared caption.
+- **Feed photos only.** Stories, Reels, video and carousels are out of scope —
+  each photo is a single-image post.
+- **No per-photo caption prompt.** Publishing is a bulk operation, so captions
+  come from the chosen metadata field plus the service's hashtag template.
+- **Removing a photo** from the collection only forgets it locally — Instagram's
+  Graph API has no endpoint to delete a published post, so the live post stays.
 - Publishing needs an internet connection; each step times out
   (upload 60 s, container processing up to 2 min).
 - Instagram enforces a **content-publishing rate limit** (≈50 posts per 24 h per
@@ -140,10 +130,9 @@ Adobe Lightroom, and enter the exact menu title `Publish to Instagram Feed...`.
 
 | File | Purpose |
 |------|---------|
-| `Info.lua` | Plugin manifest / menu registration |
-| `PublishToInstagram.lua` | Main workflow: render → host → container → publish |
-| `InstagramAPI.lua` | Instagram Graph API wrapper (containers, publish, status) |
+| `Info.lua` | Plugin manifest / publish-service registration |
+| `InstagramPublishServiceProvider.lua` | The Publish Service: dialog, collection behaviour, `processRenderedPhotos` (host → container → publish) |
+| `InstagramAPI.lua` | Instagram Graph API wrapper (containers, publish, status, account discovery) |
 | `ImageHost.lua` | Uploads the JPEG to Imgur to obtain a public URL |
-| `PluginInfoProvider.lua` | Settings panel (token, account id, Imgur, defaults) |
-| `MetadataDefinition.lua` | Custom metadata field definitions |
+| `PluginInfoProvider.lua` | Plug-in Manager panel (token, account id, Imgur) |
 | `json.lua` | JSON encode/decode (rxi, MIT) |

@@ -1,8 +1,10 @@
 --[[----------------------------------------------------------------------------
 PluginInfoProvider.lua
 Settings panel shown in  File > Plug-in Manager > Instagram Feed Publisher.
-Stores the Instagram Graph API credentials, the image-host Client ID and the
-publishing defaults, and offers a "Verify connection" button.
+Stores the GLOBAL Instagram Graph API credentials and the image-host Client ID
+(shared by the publish service), and offers "Verify connection" /
+"Find my account id". Per-service options (caption, hashtags, image size) live
+in the "Instagram Feed" publish service's own Edit Settings dialog.
 ------------------------------------------------------------------------------]]
 
 local LrView = import 'LrView'
@@ -16,12 +18,6 @@ local LrFunctionContext = import 'LrFunctionContext'
 local InstagramAPI = require 'InstagramAPI'
 
 local prefs = LrPrefs.prefsForPlugin()
-
--- Sensible defaults on first run.
-if prefs.jpegLongEdge == nil then prefs.jpegLongEdge = 1440 end
-if prefs.useCaptionFromMetadata == nil then prefs.useCaptionFromMetadata = true end
-if prefs.optWritePermalink == nil then prefs.optWritePermalink = true end
-if prefs.defaultHashtags == nil then prefs.defaultHashtags = '' end
 
 --------------------------------------------------------------------------------
 
@@ -252,37 +248,15 @@ local function sectionsForTopOfDialog(f, properties)
 		},
 
 		{
-			title = 'Defaults',
+			title = 'Publishing',
 
 			f:row {
-				f:static_text { title = 'Exported long edge:', width = 150 },
-				f:popup_menu {
-					value = bind { key = 'jpegLongEdge', object = prefs },
-					items = {
-						{ title = '1080 px (Instagram standard)', value = 1080 },
-						{ title = '1440 px (higher quality)', value = 1440 },
-						{ title = '2048 px (max)', value = 2048 },
-					},
-				},
-			},
-			f:row {
-				f:checkbox {
-					title = 'Pre-fill the caption from the photo Title / Caption / Headline',
-					value = bind { key = 'useCaptionFromMetadata', object = prefs },
-				},
-			},
-			f:row {
-				f:static_text { title = 'Append hashtags:', width = 150 },
-				f:edit_field {
-					value = bind { key = 'defaultHashtags', object = prefs },
-					width_in_chars = 44,
-					immediate = true,
-				},
-			},
-			f:row {
-				f:checkbox {
-					title = 'Record the Instagram permalink in the photo metadata after publishing',
-					value = bind { key = 'optWritePermalink', object = prefs },
+				f:static_text {
+					title = 'Photos are posted from the "Instagram Feed" publish service in the\n'
+						.. 'Library\'s Publish Services panel. Caption source, hashtags and image\n'
+						.. 'size are configured there, in the service\'s Edit Settings dialog.',
+					height_in_lines = 3,
+					font = '<system/small>',
 				},
 			},
 		},
