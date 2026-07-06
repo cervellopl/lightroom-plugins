@@ -286,6 +286,7 @@ LrTasks.startAsyncTask(function()
 			photosSkipped   = 0, -- had no keywords
 			additions       = 0, -- photo↔collection links made
 			errors          = 0, -- keywords that could not be turned into a collection
+			firstError      = nil, -- text of the first failure, for diagnostics
 		}
 
 		local ok, err = catalog:withWriteAccessDo('Add to Keyword Collection', function()
@@ -353,6 +354,10 @@ LrTasks.startAsyncTask(function()
 							stats.additions = stats.additions + 1
 						else
 							stats.errors = stats.errors + 1
+							if not stats.firstError then
+								stats.firstError = string.format('"%s": %s',
+									entry.name, tostring(coll))
+							end
 						end
 					end
 				end
@@ -386,6 +391,9 @@ LrTasks.startAsyncTask(function()
 		if stats.errors > 0 then
 			msg = msg .. string.format('\n%d keyword(s) could not be turned into a collection.',
 				stats.errors)
+			if stats.firstError then
+				msg = msg .. '\n\nFirst error — ' .. stats.firstError
+			end
 		end
 
 		LrDialogs.message('Add to Keyword Collection', msg, 'info')
