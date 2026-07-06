@@ -263,7 +263,10 @@ LrTasks.startAsyncTask(function()
 		-- only) so a failure here aborts cleanly before any catalog changes.
 		local ancestry = {}
 		if opts.structureMode == 'hierarchy' then
-			local ok, res = pcall(buildKeywordAncestry, catalog)
+			-- pcallWithContext (not raw pcall): reading the keyword tree may
+			-- yield, which a C-level pcall cannot cross.
+			local ok, res = LrFunctionContext.pcallWithContext('ktc_ancestry',
+				function() return buildKeywordAncestry(catalog) end)
 			if not ok then
 				LrDialogs.message('Add to Keyword Collection',
 					'Could not read the keyword hierarchy: ' .. tostring(res), 'error')
@@ -348,7 +351,11 @@ LrTasks.startAsyncTask(function()
 				else
 					stats.photosProcessed = stats.photosProcessed + 1
 					for _, entry in ipairs(kws) do
-						local okColl, coll = pcall(collectionFor, entry.name)
+						-- pcallWithContext, not pcall: creating collections/sets
+						-- yields, so a C-level pcall would raise "Yielding is not
+						-- allowed within a C or metamethod call".
+						local okColl, coll = LrFunctionContext.pcallWithContext('ktc_coll',
+							function() return collectionFor(entry.name) end)
 						if okColl and coll then
 							coll:addPhotos({ photo })
 							stats.additions = stats.additions + 1
