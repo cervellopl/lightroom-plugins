@@ -134,35 +134,51 @@ function InstagramAPI.verify(token, igUserId)
 	return res.username, nil
 end
 
--- Discover the Instagram Business accounts reachable from this token by walking
--- the user's Facebook Pages (each Page may link one Instagram account).
--- Returns (accounts, nil) where accounts is an array of
---   { pageName=, igId=, igUsername= }   (only entries that HAVE a linked IG
--- account are included), or (nil, message).
+-- Discover Instagram accounts reachable from this token by walking the user's
+-- Facebook Pages. Returns (info, nil) or (nil, message), where info is:
+--   { usable       = { { pageName=, igId=, igUsername= }, ... }, -- API-ready
+--     connectedOnly = { { pageName=, igUsername=, igId= }, ... }, -- linked but
+--                                                                 -- not Business
+--     pageNames     = { '<page>', ... } }                        -- every Page
+-- `usable` are the accounts that can actually publish; the other two fields
+-- exist so the caller can explain *why* nothing usable was found.
 function InstagramAPI.discoverAccounts(token)
 	if not token or token == '' then return nil, 'No access token configured.' end
 
 	local res, err = get('/me/accounts', {
-		fields = 'name,instagram_business_account{id,username}',
+		fields = 'name,instagram_business_account{id,username},connected_instagram_account{id,username}',
 		limit = '100',
 		access_token = token,
 	}, 'Looking up your Facebook Pages failed')
 	if not res then return nil, err end
 
-	local accounts = {}
+	local info = { usable = {}, connectedOnly = {}, pageNames = {} }
 	if type(res.data) == 'table' then
 		for _, page in ipairs(res.data) do
+			table.insert(info.pageNames, page.name or '(unnamed Page)')
+
 			local iga = page.instagram_business_account
 			if type(iga) == 'table' and iga.id then
-				table.insert(accounts, {
+				table.insert(info.usable, {
 					pageName = page.name or '',
 					igId = iga.id,
 					igUsername = iga.username or '',
 				})
+			else
+				-- A personal IG account can be "connected" to a Page without being
+				-- a Business/Creator account — it can't publish via the API.
+				local cia = page.connected_instagram_account
+				if type(cia) == 'table' and (cia.id or cia.username) then
+					table.insert(info.connectedOnly, {
+						pageName = page.name or '',
+						igUsername = cia.username or '',
+						igId = cia.id,
+					})
+				end
 			end
 		end
 	end
-	return accounts, nil
+	return info, nil
 end
 
 -- Create a single-image media container.

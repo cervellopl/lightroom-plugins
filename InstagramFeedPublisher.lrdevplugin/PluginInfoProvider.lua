@@ -74,8 +74,8 @@ end
 -- Returns true if an account was applied. `silentIfNone` suppresses the
 -- "nothing found" dialog (used as a fallback after a failed verify).
 local function findAccounts(properties, silentIfNone)
-	local accounts, err = InstagramAPI.discoverAccounts(prefs.igAccessToken)
-	if not accounts then
+	local info, err = InstagramAPI.discoverAccounts(prefs.igAccessToken)
+	if not info then
 		-- Only nudge about permissions when it isn't really a dead-token problem.
 		local e = tostring(err)
 		local hint = ''
@@ -87,18 +87,41 @@ local function findAccounts(properties, silentIfNone)
 		return false
 	end
 
-	if #accounts == 0 then
+	if #info.usable == 0 then
 		if not silentIfNone then
-			LrDialogs.message('Instagram Feed Publisher',
-				'No Instagram Business account was found for this token.\n\n'
-				.. 'Make sure your Instagram account is a Business/Creator account, is '
-				.. 'linked to a Facebook Page you manage, and that the token carries '
-				.. 'pages_show_list + instagram_basic.', 'warning')
+			local msg
+			if #info.pageNames == 0 then
+				-- No Pages at all -> wrong token type or missing permission.
+				msg = 'No Facebook Pages are visible to this token.\n\n'
+					.. 'Either the token is missing the pages_show_list permission, or it '
+					.. 'was created with "Instagram API with Instagram Login". This plugin '
+					.. 'uses the Facebook Login flow, which needs your Instagram account '
+					.. 'linked to a Facebook Page you manage.'
+			elseif #info.connectedOnly > 0 then
+				-- IG is connected to a Page but not a Business/Creator account.
+				local parts = {}
+				for _, c in ipairs(info.connectedOnly) do
+					local who = (c.igUsername ~= '' and ('@' .. c.igUsername)) or 'An Instagram account'
+					table.insert(parts, '  ' .. who .. '  (Page: ' .. c.pageName .. ')')
+				end
+				msg = 'An Instagram account is connected, but it is not a Business/Creator '
+					.. 'account, so it cannot publish via the API:\n\n'
+					.. table.concat(parts, '\n') .. '\n\n'
+					.. 'In the Instagram app: Settings ▸ Account type and tools ▸ switch to '
+					.. 'Professional (Business or Creator), then reconnect it to the Page.'
+			else
+				-- Pages exist, but none links an Instagram account at all.
+				msg = 'Found these Facebook Pages, but none has an Instagram account linked:\n\n  '
+					.. table.concat(info.pageNames, '\n  ') .. '\n\n'
+					.. 'Link your Instagram (Business/Creator) account to one of these Pages '
+					.. '(Page ▸ Settings ▸ Linked accounts / Instagram), then try again.'
+			end
+			LrDialogs.message('Instagram Feed Publisher', msg, 'warning')
 		end
 		return false
 	end
 
-	local acct = (#accounts == 1) and accounts[1] or pickAccount(accounts)
+	local acct = (#info.usable == 1) and info.usable[1] or pickAccount(info.usable)
 	if not acct then return false end
 
 	useAccount(properties, acct)
