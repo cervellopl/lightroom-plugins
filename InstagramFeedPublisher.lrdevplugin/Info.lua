@@ -16,7 +16,7 @@ return {
 	LrToolkitIdentifier = 'pl.cervello.instagramfeedpublisher',
 	LrPluginName = 'Instagram Feed Publisher',
 
-	-- Global credentials (access token, account id, Imgur Client ID) live here,
+	-- Global credentials (access token, account id, ImgBB API key) live here,
 	-- in  File > Plug-in Manager > Instagram Feed Publisher.
 	LrPluginInfoProvider = 'PluginInfoProvider.lua',
 

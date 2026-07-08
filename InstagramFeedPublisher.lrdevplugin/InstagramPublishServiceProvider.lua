@@ -80,26 +80,19 @@ local function waitForContainer(token, containerId)
 end
 
 -- Post one already-rendered JPEG file. Returns (mediaId, permalink) or raises.
+-- The hosted image auto-expires (see ImageHost), so there is nothing to clean up.
 local function publishOne(token, igUserId, jpegPath, caption)
-	local uploaded, uErr = ImageHost.uploadImgur(jpegPath, prefs.imgurClientId)
+	local uploaded, uErr = ImageHost.uploadImgbb(jpegPath, prefs.imgbbApiKey)
 	if not uploaded then error(uErr) end
 
-	local function fail(msg)
-		ImageHost.deleteImgur(uploaded.deleteHash, prefs.imgurClientId)
-		error(msg)
-	end
-
 	local containerId, cErr = InstagramAPI.createImageContainer(token, igUserId, uploaded.url, caption, false)
-	if not containerId then fail(cErr) end
+	if not containerId then error(cErr) end
 
 	local ok, wErr = waitForContainer(token, containerId)
-	if not ok then fail(wErr) end
+	if not ok then error(wErr) end
 
 	local mediaId, pErr = InstagramAPI.publish(token, igUserId, containerId)
-	if not mediaId then fail(pErr) end
-
-	-- Instagram has ingested the image by now; drop the temporary upload.
-	ImageHost.deleteImgur(uploaded.deleteHash, prefs.imgurClientId)
+	if not mediaId then error(pErr) end
 
 	local permalink = select(1, InstagramAPI.getPermalink(token, mediaId))
 	return mediaId, permalink
@@ -183,7 +176,7 @@ function provider.sectionsForTopOfDialog(f, propertyTable)
 			f:row {
 				f:static_text { title = '', width = 110 },
 				f:static_text {
-					title = 'The access token, Instagram account id and Imgur Client ID are managed\n'
+					title = 'The access token, Instagram account id and ImgBB API key are managed\n'
 						.. 'in File ▸ Plug-in Manager ▸ Instagram Feed Publisher.',
 					height_in_lines = 2,
 					font = '<system/small>',
@@ -272,9 +265,9 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 			'Instagram is not connected. Open File ▸ Plug-in Manager ▸ Instagram Feed '
 			.. 'Publisher and set your access token and Instagram account id.')
 	end
-	if not (prefs.imgurClientId and prefs.imgurClientId ~= '') then
+	if not (prefs.imgbbApiKey and prefs.imgbbApiKey ~= '') then
 		LrErrors.throwUserError(
-			'No Imgur Client ID configured (needed to host the image for Instagram). '
+			'No ImgBB API key configured (needed to host the image for Instagram). '
 			.. 'Set it in the Plug-in Manager.')
 	end
 

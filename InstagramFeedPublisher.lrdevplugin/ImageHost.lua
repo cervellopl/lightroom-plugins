@@ -5,55 +5,63 @@ Uploads a rendered JPEG somewhere publicly reachable and returns its URL.
 WHY THIS EXISTS
   The Instagram Graph API does NOT accept raw image bytes for feed photos. To
   create a media container you must hand it a *public https URL* that Meta's
-  servers can fetch (`image_url`). So before we can publish, the exported JPEG
+  servers can fetch (`image_url`). So before we can publish, the rendered JPEG
   has to live at a real URL for a moment.
 
-  This module implements that step against Imgur's anonymous upload API, which
-  only needs a free "Client ID" (no user login). Imgur returns a direct
-  https://i.imgur.com/… link that Instagram can read.
+  This module implements that step against ImgBB, which needs only a free API
+  key (no user login per upload). ImgBB also supports an `expiration` parameter,
+  so we ask it to auto-delete the upload after a few minutes — Instagram only
+  needs to read it once, during publishing, so there is nothing to clean up
+  afterwards.
 
   It is deliberately small and single-purpose so a different host could be
   dropped in later without touching the publishing code.
 
-Docs: https://apidocs.imgur.com/  ->  POST /3/image
+Docs: https://api.imgbb.com/
 ------------------------------------------------------------------------------]]
 
 local LrHttp = import 'LrHttp'
+local LrStringUtils = import 'LrStringUtils'
 local json = require 'json'
 
 local ImageHost = {}
 
-local IMGUR_UPLOAD_URL = 'https://api.imgur.com/3/image'
+-- Seconds ImgBB keeps the upload before auto-deleting it. Instagram ingests the
+-- image within seconds of container creation, so a few minutes is ample.
+local EXPIRATION_SECONDS = 600
 
--- Upload a JPEG file to Imgur anonymously.
+-- Upload a JPEG file to ImgBB.
 --   jpegFilePath : path to a JPEG on disk.
---   clientId     : Imgur application Client ID (free, from imgur.com).
--- Returns (result, err) where result = { url = <direct link>,
--- deleteHash = <token> }.  deleteHash lets us remove the temporary upload
--- after Instagram has ingested it.
-function ImageHost.uploadImgur(jpegFilePath, clientId)
+--   apiKey       : ImgBB API key (free, from api.imgbb.com).
+-- Returns (result, err) where result = { url = <direct image link> }.
+function ImageHost.uploadImgbb(jpegFilePath, apiKey)
 
-	if not clientId or clientId == '' then
-		return nil, 'No Imgur Client ID configured.'
+	if not apiKey or apiKey == '' then
+		return nil, 'No ImgBB API key configured.'
 	end
 
-	local content = {
-		{ name = 'type', value = 'file' },
-		{
-			name = 'image',
-			fileName = 'photo.jpg',
-			filePath = jpegFilePath,
-			contentType = 'image/jpeg',
-		},
-	}
+	-- ImgBB's documented upload format is base64 in an `image` field.
+	local fh, ioErr = io.open(jpegFilePath, 'rb')
+	if not fh then
+		return nil, 'Could not read the rendered image: ' .. tostring(ioErr)
+	end
+	local bytes = fh:read('*all')
+	fh:close()
+	if not bytes or bytes == '' then
+		return nil, 'The rendered image was empty.'
+	end
 
-	local headers = {
-		{ field = 'Authorization', value = 'Client-ID ' .. clientId },
-		{ field = 'Accept', value = 'application/json' },
+	local b64 = LrStringUtils.encodeBase64(bytes):gsub('%s+', '')
+
+	local url = string.format(
+		'https://api.imgbb.com/1/upload?expiration=%d&key=%s', EXPIRATION_SECONDS, apiKey)
+
+	local content = {
+		{ name = 'image', value = b64 },
 	}
 
 	-- LrHttp.postMultipart( url, content, requestHeaders, timeout, ... )
-	local body, respHeaders = LrHttp.postMultipart(IMGUR_UPLOAD_URL, content, headers, 60, nil, false)
+	local body, respHeaders = LrHttp.postMultipart(url, content, nil, 60, nil, false)
 
 	if not body then
 		local status = respHeaders and respHeaders.error and respHeaders.error.name or 'unknown'
@@ -65,38 +73,21 @@ function ImageHost.uploadImgur(jpegFilePath, clientId)
 		return nil, 'Could not parse the image host response.'
 	end
 
-	if parsed.success == false or type(parsed.data) ~= 'table' or not parsed.data.link then
+	local data = parsed.data
+	if type(data) ~= 'table' or not (data.url or data.display_url) then
 		local msg = 'unknown error'
-		if type(parsed.data) == 'table' and parsed.data.error then
-			-- Imgur reports the error either as a string or a nested object.
-			msg = type(parsed.data.error) == 'table'
-				and (parsed.data.error.message or parsed.data.error.code)
-				or parsed.data.error
+		if type(parsed.error) == 'table' then
+			msg = parsed.error.message or msg
+		elseif parsed.status_txt then
+			msg = parsed.status_txt
 		end
 		return nil, 'Image host rejected the upload: ' .. tostring(msg)
 	end
 
 	-- Instagram will not fetch over plain http; force https on the direct link.
-	local url = tostring(parsed.data.link):gsub('^http://', 'https://')
+	local link = tostring(data.url or data.display_url):gsub('^http://', 'https://')
 
-	return {
-		url = url,
-		deleteHash = parsed.data.deletehash,
-	}, nil
-end
-
--- Best-effort cleanup of a temporary anonymous upload. Failure is ignored on
--- purpose — a leftover image is harmless and Instagram already has its copy.
-function ImageHost.deleteImgur(deleteHash, clientId)
-	if not deleteHash or deleteHash == '' or not clientId or clientId == '' then
-		return
-	end
-	local headers = {
-		{ field = 'Authorization', value = 'Client-ID ' .. clientId },
-	}
-	pcall(function()
-		LrHttp.post('https://api.imgur.com/3/image/' .. deleteHash, '', headers, 'DELETE')
-	end)
+	return { url = link }, nil
 end
 
 return ImageHost

@@ -247,19 +247,20 @@ local function sectionsForTopOfDialog(f, properties)
 		},
 
 		{
-			title = 'Image hosting (Imgur)',
+			title = 'Image hosting (ImgBB)',
 
 			f:row {
 				f:static_text {
-					title = 'Instagram fetches the photo from a public URL, so the exported JPEG is\n'
-						.. 'uploaded to Imgur first (then removed). Paste a free Imgur Client ID:',
-					height_in_lines = 2,
+					title = 'Instagram fetches the photo from a public URL, so the rendered JPEG is\n'
+						.. 'uploaded to ImgBB first (and auto-deleted minutes later). Paste a free\n'
+						.. 'ImgBB API key:',
+					height_in_lines = 3,
 				},
 			},
 			f:row {
-				f:static_text { title = 'Imgur Client ID:', width = 150 },
+				f:static_text { title = 'ImgBB API key:', width = 150 },
 				f:edit_field {
-					value = bind { key = 'imgurClientId', object = prefs },
+					value = bind { key = 'imgbbApiKey', object = prefs },
 					width_in_chars = 44,
 					immediate = true,
 				},
@@ -267,9 +268,9 @@ local function sectionsForTopOfDialog(f, properties)
 			f:row {
 				f:static_text { title = '', width = 150 },
 				f:push_button {
-					title = 'Register an Imgur app…',
+					title = 'Get a free ImgBB key…',
 					action = function()
-						LrHttp.openUrlInBrowser('https://api.imgur.com/oauth2/addclient')
+						LrHttp.openUrlInBrowser('https://api.imgbb.com/')
 					end,
 				},
 			},

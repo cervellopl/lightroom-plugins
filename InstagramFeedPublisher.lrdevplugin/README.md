@@ -30,10 +30,10 @@ The Instagram Graph API does **not** accept raw image bytes for feed photos —
 you give it a **public `image_url`** and Meta's servers fetch the picture
 themselves. So the exported JPEG has to sit at a real URL for a moment.
 
-This plugin uses **Imgur's** free anonymous upload for that step and then
-deletes the temporary upload once Instagram has ingested it. Your photo is
-briefly public on Imgur during publishing — if that isn't acceptable, don't use
-this plugin as-is.
+This plugin uses **ImgBB** for that step, uploading the rendered JPEG with a
+short `expiration` so ImgBB auto-deletes it minutes later (Instagram only reads
+it once, during publishing). Your photo is briefly public on ImgBB while it
+publishes — if that isn't acceptable, don't use this plugin as-is.
 
 ## Requirements
 
@@ -42,7 +42,7 @@ this plugin as-is.
 - A **Meta app** with the Instagram Graph API, and a long-lived access token
   carrying `instagram_basic` and `instagram_content_publish`.
 - The **Instagram Business Account ID** (not the Facebook Page ID).
-- A free **Imgur Client ID**.
+- A free **ImgBB API key**.
 
 ## Install
 
@@ -83,12 +83,11 @@ Open **File ▸ Plug-in Manager ▸ Instagram Feed Publisher**.
 > Long-lived user tokens expire after ~60 days; re-generate and paste a fresh one
 > when publishing starts to fail with an auth error.
 
-### Imgur Client ID
+### ImgBB API key
 
-1. Go to <https://api.imgur.com/oauth2/addclient>.
-2. Register an application of type **"OAuth 2 without a callback URL"** (that's
-   the anonymous-upload flavour).
-3. Copy the **Client ID** into the plugin.
+1. Go to <https://api.imgbb.com/> and sign in (free account).
+2. Click **Get API key** and copy it.
+3. Paste the **API key** into the plugin.
 
 ## Create the publish service
 
@@ -128,7 +127,7 @@ characters** and **30 hashtags**.
   (upload 60 s, container processing up to 2 min).
 - Instagram enforces a **content-publishing rate limit** (≈50 posts per 24 h per
   account).
-- The token, account id and Imgur Client ID are stored in Lightroom's plugin
+- The token, account id and ImgBB API key are stored in Lightroom's plugin
   preferences on this machine.
 
 ## File overview
@@ -138,6 +137,6 @@ characters** and **30 hashtags**.
 | `Info.lua` | Plugin manifest / publish-service registration |
 | `InstagramPublishServiceProvider.lua` | The Publish Service: dialog, collection behaviour, `processRenderedPhotos` (host → container → publish) |
 | `InstagramAPI.lua` | Instagram Graph API wrapper (containers, publish, status, account discovery) |
-| `ImageHost.lua` | Uploads the JPEG to Imgur to obtain a public URL |
-| `PluginInfoProvider.lua` | Plug-in Manager panel (token, account id, Imgur) |
+| `ImageHost.lua` | Uploads the JPEG to ImgBB to obtain a public URL |
+| `PluginInfoProvider.lua` | Plug-in Manager panel (token, account id, ImgBB) |
 | `json.lua` | JSON encode/decode (rxi, MIT) |
