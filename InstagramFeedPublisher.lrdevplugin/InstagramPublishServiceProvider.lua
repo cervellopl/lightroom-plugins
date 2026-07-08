@@ -278,7 +278,7 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 			or 'Publishing 1 photo to Instagram',
 	}
 
-	for i, rendition in exportContext:renderedPhotos() do
+	for i, rendition in exportContext:renditions { stopIfCanceled = true } do
 		local success, pathOrMessage = rendition:waitForRender()
 		if success then
 			local caption = buildCaption(rendition.photo, exportSettings)
