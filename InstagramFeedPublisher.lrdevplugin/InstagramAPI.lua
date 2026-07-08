@@ -66,6 +66,15 @@ local function decodeResponse(body, respHeaders, whatFailed)
 
 	if parsed.error then
 		local e = parsed.error
+		local code = tonumber(e.code)
+		-- Code 190 = the access token is invalid or expired. Short-lived tokens
+		-- die within a couple of hours, so make the fix explicit.
+		if code == 190 then
+			return nil, 'The access token is invalid or has expired. In the Graph API '
+				.. 'Explorer generate a new token, exchange it for a long-lived one '
+				.. '(~60 days), and paste it into File ▸ Plug-in Manager ▸ '
+				.. 'Instagram Feed Publisher.'
+		end
 		-- error_user_msg is the human-friendly text Meta wants shown to users.
 		local msg = e.error_user_msg or e.message or 'unknown error'
 		if e.code then msg = msg .. ' (code ' .. tostring(e.code) .. ')' end

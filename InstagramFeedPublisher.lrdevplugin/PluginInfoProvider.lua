@@ -76,9 +76,14 @@ end
 local function findAccounts(properties, silentIfNone)
 	local accounts, err = InstagramAPI.discoverAccounts(prefs.igAccessToken)
 	if not accounts then
+		-- Only nudge about permissions when it isn't really a dead-token problem.
+		local e = tostring(err)
+		local hint = ''
+		if not (e:find('expired') or e:find('invalid')) then
+			hint = '\n\nThe token also needs the pages_show_list permission for this.'
+		end
 		LrDialogs.message('Instagram Feed Publisher',
-			'Could not look up your accounts:\n\n' .. tostring(err)
-			.. '\n\nThe token also needs the pages_show_list permission for this.', 'warning')
+			'Could not look up your accounts:\n\n' .. e .. hint, 'warning')
 		return false
 	end
 

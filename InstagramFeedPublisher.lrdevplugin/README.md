@@ -62,7 +62,12 @@ Open **File ▸ Plug-in Manager ▸ Instagram Feed Publisher**.
 2. Link your Instagram professional account to a Facebook Page you manage.
 3. In the **Graph API Explorer** generate a **User access token** with the
    `instagram_basic`, `instagram_content_publish`, and `pages_show_list`
-   permissions, then exchange it for a **long-lived** token (≈60 days).
+   permissions. **This token is short-lived (≈1–2 h) — exchange it for a
+   long-lived one (≈60 days)** or the plugin will fail with
+   `(code 190) Session has expired`. Exchange it by opening this URL (fill in
+   your app id/secret and the short token):
+   `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=APP_ID&client_secret=APP_SECRET&fb_exchange_token=SHORT_TOKEN`
+   — the response's `access_token` is the long-lived one to paste in.
 4. Paste the **Access token** into the plugin and click **Find my account id** —
    the plugin walks your Facebook Pages, finds the linked Instagram account, and
    fills in the correct id automatically (if you manage several, it asks which
