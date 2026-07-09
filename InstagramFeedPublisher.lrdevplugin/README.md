@@ -39,8 +39,9 @@ publishes — if that isn't acceptable, don't use this plugin as-is.
 
 - An Instagram **professional account** (Business *or* Creator).
 - That account **linked to a Facebook Page**.
-- A **Meta app** with the Instagram Graph API, and a long-lived access token
-  carrying `instagram_basic` and `instagram_content_publish`.
+- A **Meta app** with the Instagram Graph API — its **App ID + App Secret**, and
+  an access token carrying `instagram_basic`, `instagram_content_publish` and
+  `pages_show_list` (the plugin makes it long-lived and keeps it refreshed).
 - The **Instagram Business Account ID** (not the Facebook Page ID).
 - A free **ImgBB API key**.
 
@@ -60,18 +61,18 @@ Open **File ▸ Plug-in Manager ▸ Instagram Feed Publisher**.
 1. At <https://developers.facebook.com/> create an app (type *Business*) and add
    the **Instagram Graph API** product.
 2. Link your Instagram professional account to a Facebook Page you manage.
-3. In the **Graph API Explorer** generate a **User access token** with the
+3. Copy your **App ID** and **App Secret** from **Meta app ▸ Settings ▸ Basic**
+   and paste them into the plugin. (These let the plugin keep the token alive —
+   see *Never-expiring token* below.)
+4. In the **Graph API Explorer** generate a **User access token** with the
    `instagram_basic`, `instagram_content_publish`, and `pages_show_list`
-   permissions. **This token is short-lived (≈1–2 h) — exchange it for a
-   long-lived one (≈60 days)** or the plugin will fail with
-   `(code 190) Session has expired`. Exchange it by opening this URL (fill in
-   your app id/secret and the short token):
-   `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=APP_ID&client_secret=APP_SECRET&fb_exchange_token=SHORT_TOKEN`
-   — the response's `access_token` is the long-lived one to paste in.
-4. Paste the **Access token** into the plugin and click **Find my account id** —
-   the plugin walks your Facebook Pages, finds the linked Instagram account, and
-   fills in the correct id automatically (if you manage several, it asks which
-   one). Then click **Verify connection** — it should report
+   permissions, and paste it into **Access token**. It's fine that this token is
+   short-lived — the next step upgrades it.
+5. Click **Get long-lived token**. The plugin exchanges it for a ~60-day token
+   and records its expiry (the **Token** line shows the days remaining).
+6. Click **Find my account id** — the plugin walks your Facebook Pages, finds the
+   linked Instagram account, and fills in the correct id (if you manage several,
+   it asks which one). Then **Verify connection** should report
    `Connected as @yourname`.
 
 > **The account id is NOT your Facebook id.** The *Instagram Business Account id*
@@ -80,8 +81,18 @@ Open **File ▸ Plug-in Manager ▸ Instagram Feed Publisher**.
 > deprecated`. Use **Find my account id** to get the right one, or query it
 > manually: `me/accounts` → your Page → `?fields=instagram_business_account`.
 
-> Long-lived user tokens expire after ~60 days; re-generate and paste a fresh one
-> when publishing starts to fail with an auth error.
+### Never-expiring token
+
+Facebook long-lived tokens last ~60 days, but a *still-valid* one can be
+exchanged for a fresh 60-day token any time. With the **App ID + App Secret**
+saved, the plugin does this automatically: before every publish (and when you
+open the settings) it checks the token's remaining life and, if it's within 10
+days of expiring, silently swaps it for a new 60-day token. So as long as you
+publish — or just open the Plug-in Manager — at least once every ~2 months, the
+connection never expires and you never have to paste a token again.
+
+If you ever let it lapse completely, generate a new Explorer token, paste it, and
+click **Get long-lived token** again.
 
 ### ImgBB API key
 
@@ -137,6 +148,7 @@ characters** and **30 hashtags**.
 | `Info.lua` | Plugin manifest / publish-service registration |
 | `InstagramPublishServiceProvider.lua` | The Publish Service: dialog, collection behaviour, `processRenderedPhotos` (host → container → publish) |
 | `InstagramAPI.lua` | Instagram Graph API wrapper (containers, publish, status, account discovery) |
+| `InstagramAuth.lua` | Long-lived token exchange + automatic refresh (never expires) |
 | `ImageHost.lua` | Uploads the JPEG to ImgBB to obtain a public URL |
 | `PluginInfoProvider.lua` | Plug-in Manager panel (token, account id, ImgBB) |
 | `json.lua` | JSON encode/decode (rxi, MIT) |

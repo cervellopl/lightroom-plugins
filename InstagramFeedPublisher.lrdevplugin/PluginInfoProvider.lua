@@ -1,8 +1,9 @@
 --[[----------------------------------------------------------------------------
 PluginInfoProvider.lua
 Settings panel shown in  File > Plug-in Manager > Instagram Feed Publisher.
-Stores the GLOBAL Instagram Graph API credentials and the image-host Client ID
-(shared by the publish service), and offers "Verify connection" /
+Stores the GLOBAL Instagram Graph API credentials (access token, account id,
+App ID/Secret) and the image-host key, shared by the publish service. Offers
+"Get long-lived token" (auto-refreshing), "Verify connection" and
 "Find my account id". Per-service options (caption, hashtags, image size) live
 in the "Instagram Feed" publish service's own Edit Settings dialog.
 ------------------------------------------------------------------------------]]
@@ -16,6 +17,7 @@ local LrBinding = import 'LrBinding'
 local LrFunctionContext = import 'LrFunctionContext'
 
 local InstagramAPI = require 'InstagramAPI'
+local InstagramAuth = require 'InstagramAuth'
 
 local prefs = LrPrefs.prefsForPlugin()
 
@@ -28,12 +30,18 @@ local function statusText()
 	return 'Not verified'
 end
 
+-- Push the current connection + token status into the bound dialog fields.
+local function refreshStatus(properties)
+	properties.igStatus = statusText()
+	properties.tokenStatus = InstagramAuth.tokenStatus()
+end
+
 -- Store a discovered account as the active one and mark it verified.
 local function useAccount(properties, acct)
 	prefs.igUserId = acct.igId
 	prefs.igVerifiedUser = acct.igUsername
 	properties.igUserId = acct.igId       -- reflect into the visible field
-	properties.igStatus = statusText()
+	refreshStatus(properties)
 end
 
 -- Let the user pick when a token exposes more than one Instagram account.
@@ -132,10 +140,11 @@ end
 
 local function doVerify(properties)
 	LrTasks.startAsyncTask(function()
+		InstagramAuth.ensureFreshToken() -- refresh a stale long-lived token first
 		local user, err = InstagramAPI.verify(prefs.igAccessToken, prefs.igUserId)
 		if user then
 			prefs.igVerifiedUser = user
-			properties.igStatus = statusText()
+			refreshStatus(properties)
 			LrDialogs.message('Instagram Feed Publisher',
 				'Connected successfully as @' .. user .. '.', 'info')
 			return
@@ -144,13 +153,13 @@ local function doVerify(properties)
 		-- Verify failed. Try to auto-discover the right account id; if that
 		-- succeeds, confirm end-to-end with a second verify.
 		prefs.igVerifiedUser = nil
-		properties.igStatus = statusText()
+		refreshStatus(properties)
 
 		if findAccounts(properties, true) then
 			local user2, err2 = InstagramAPI.verify(prefs.igAccessToken, prefs.igUserId)
 			if user2 then
 				prefs.igVerifiedUser = user2
-				properties.igStatus = statusText()
+				refreshStatus(properties)
 				LrDialogs.message('Instagram Feed Publisher',
 					'Connected successfully as @' .. user2 .. '.', 'info')
 			else
@@ -168,7 +177,26 @@ end
 
 local function doFindAccounts(properties)
 	LrTasks.startAsyncTask(function()
+		InstagramAuth.ensureFreshToken()
 		findAccounts(properties, false)
+		refreshStatus(properties)
+	end)
+end
+
+-- Turn the pasted (short-lived) token into a long-lived, auto-refreshing one.
+local function doGetLongLived(properties)
+	LrTasks.startAsyncTask(function()
+		local ok, err = InstagramAuth.makeLongLived()
+		refreshStatus(properties)
+		if ok then
+			LrDialogs.message('Instagram Feed Publisher',
+				'Got a long-lived token. The plugin will now refresh it automatically '
+				.. 'before it expires, so it stays connected.\n\n'
+				.. InstagramAuth.tokenStatus() .. '.', 'info')
+		else
+			LrDialogs.message('Instagram Feed Publisher',
+				'Could not get a long-lived token:\n\n' .. tostring(err), 'warning')
+		end
 	end)
 end
 
@@ -177,7 +205,7 @@ end
 local function sectionsForTopOfDialog(f, properties)
 
 	local bind = LrView.bind
-	properties.igStatus = statusText()
+	refreshStatus(properties)
 
 	return {
 		{
@@ -189,6 +217,13 @@ local function sectionsForTopOfDialog(f, properties)
 					title = bind { key = 'igStatus', object = properties },
 					width = 320,
 					font = '<system/bold>',
+				},
+			},
+			f:row {
+				f:static_text { title = 'Token:', width = 150 },
+				f:static_text {
+					title = bind { key = 'tokenStatus', object = properties },
+					width = 320,
 				},
 			},
 
@@ -211,8 +246,32 @@ local function sectionsForTopOfDialog(f, properties)
 				},
 			},
 
+			f:spacer { height = 4 },
+
+			-- App ID + Secret are needed to refresh the token so it never expires.
+			f:row {
+				f:static_text { title = 'App ID:', width = 150 },
+				f:edit_field {
+					value = bind { key = 'igAppId', object = prefs },
+					width_in_chars = 44,
+					immediate = true,
+				},
+			},
+			f:row {
+				f:static_text { title = 'App Secret:', width = 150 },
+				f:password_field {
+					value = bind { key = 'igAppSecret', object = prefs },
+					width_in_chars = 44,
+					immediate = true,
+				},
+			},
+
 			f:row {
 				f:static_text { title = '', width = 150 },
+				f:push_button {
+					title = 'Get long-lived token',
+					action = function() doGetLongLived(properties) end,
+				},
 				f:push_button {
 					title = 'Verify connection',
 					action = function() doVerify(properties) end,
@@ -227,20 +286,16 @@ local function sectionsForTopOfDialog(f, properties)
 						LrHttp.openUrlInBrowser('https://developers.facebook.com/tools/explorer/')
 					end,
 				},
-				f:push_button {
-					title = 'Publishing docs…',
-					action = function()
-						LrHttp.openUrlInBrowser('https://developers.facebook.com/docs/instagram-api/guides/content-publishing')
-					end,
-				},
 			},
 
 			f:row {
 				f:static_text { title = '', width = 150 },
 				f:static_text {
 					title = 'Requires an Instagram Business/Creator account linked to a Facebook Page,\n'
-						.. 'and a long-lived token with instagram_basic + instagram_content_publish.',
-					height_in_lines = 2,
+						.. 'and a token with instagram_basic + instagram_content_publish + pages_show_list.\n'
+						.. 'Add the App ID/Secret (Meta app ▸ Settings ▸ Basic) and click "Get long-lived\n'
+						.. 'token" — the plugin then auto-refreshes it so it never expires.',
+					height_in_lines = 4,
 					font = '<system/small>',
 				},
 			},

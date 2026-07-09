@@ -24,6 +24,7 @@ local LrDialogs = import 'LrDialogs'
 local LrFunctionContext = import 'LrFunctionContext'
 
 local InstagramAPI = require 'InstagramAPI'
+local InstagramAuth = require 'InstagramAuth'
 local ImageHost = require 'ImageHost'
 
 local prefs = LrPrefs.prefsForPlugin()
@@ -258,7 +259,8 @@ function provider.processRenderedPhotos(functionContext, exportContext)
 	local exportSession = exportContext.exportSession
 
 	-- Fail fast (and clearly) if the plugin isn't configured yet.
-	local token = prefs.igAccessToken
+	-- ensureFreshToken refreshes the long-lived token when it is nearing expiry.
+	local token = InstagramAuth.ensureFreshToken()
 	local igUserId = prefs.igUserId
 	if not (token and token ~= '' and igUserId and igUserId ~= '') then
 		LrErrors.throwUserError(
