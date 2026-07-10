@@ -73,9 +73,14 @@ Your last choice is remembered as the default.
 - **Mushrooms:** Pl@ntNet only identifies plants; fungi are covered by
   iNaturalist, which returns proper species names and an iconic-taxon flag
   (Plantae / Fungi). Still verify — vision suggestions are not identifications.
-- The image sent is Lightroom's ~1024 px preview, which is plenty for ID and
-  keeps uploads small. Make sure the plant/mushroom fills the frame for best
-  results (crop first if needed).
+- **File formats:** works with **any format Lightroom can read** — RAW
+  (CR2/CR3, NEF, ARW, RAF, ORF, DNG…), **HEIC**, TIFF, PNG, JPEG. The plugin
+  never reads the original file; it asks Lightroom to render the photo to a
+  ~1600 px sRGB JPEG (a real export), so format support equals Lightroom's own.
+  Note HEIC also needs the OS HEIF codec that Lightroom itself relies on.
+- If the export can't render (rare), it falls back to Lightroom's cached
+  preview. Make sure the plant/mushroom fills the frame for best results
+  (crop first if needed).
 - Requires an internet connection. Both requests time out after 30 s.
 - Works on one photo at a time (the most-selected photo).
 

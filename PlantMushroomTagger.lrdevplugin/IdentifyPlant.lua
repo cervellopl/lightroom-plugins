@@ -20,6 +20,7 @@ local LrPrefs = import 'LrPrefs'
 local LrPathUtils = import 'LrPathUtils'
 local LrFileUtils = import 'LrFileUtils'
 local LrProgressScope = import 'LrProgressScope'
+local LrExportSession = import 'LrExportSession'
 
 local PlantNetAPI = require 'PlantNetAPI'
 local iNaturalistAPI = require 'iNaturalistAPI'
@@ -36,12 +37,68 @@ if prefs.optWriteCaption == nil then prefs.optWriteCaption = false end
 -- Helpers
 --------------------------------------------------------------------------------
 
--- Render the photo to JPEG bytes (from the Lightroom preview) and also drop a
--- temp file to disk (Pl@ntNet's multipart upload needs a file path).
-local function getJpeg(photo, size)
-	local data, err, done = nil, nil, false
+-- Produce a JPEG on disk for the given photo, working for ANY source format
+-- (RAW: CR2/CR3/NEF/ARW/RAF/DNG…, HEIC, TIFF, JPEG, PNG…). We never read the
+-- original bytes; Lightroom does the decode, so format support == whatever
+-- Lightroom can import.
+--
+-- Returns (filePath, cleanupDir, errorMessage). Delete cleanupDir when done.
+local function getPhotoJpeg(photo, size)
+
+	-- Unique temp subfolder -> collision-free and cleanup is one delete.
+	local dir = LrPathUtils.child(
+		LrPathUtils.getStandardFilePath('temp'),
+		'pmtagger_' .. tostring(os.time()) .. '_' .. tostring(math.random(1000, 9999)))
+	LrFileUtils.createAllDirectories(dir)
+
+	-- Primary path: a real export. This forces Lightroom to render the
+	-- ORIGINAL to a clean sRGB JPEG at a good size, even if no preview has been
+	-- built yet — which is exactly the RAW/HEIC-just-imported case where
+	-- requestJpegThumbnail returns a tiny image or nothing.
+	--
+	-- NOTE: waitForRender() yields, so this MUST run under a yield-safe
+	-- pcallWithContext, never a plain pcall.
+	local exportOk, exportResult = LrFunctionContext.pcallWithContext('pmtagger_export', function()
+		local session = LrExportSession {
+			photosToExport = { photo },
+			exportSettings = {
+				LR_export_destinationType       = 'specificFolder',
+				LR_export_destinationPathPrefix = dir,
+				LR_export_useSubfolder          = false,
+				LR_format                       = 'JPEG',
+				LR_jpeg_quality                 = 0.8,
+				LR_export_colorSpace            = 'sRGB',
+				LR_size_doConstrain             = true,
+				LR_size_maxWidth                = size,
+				LR_size_maxHeight               = size,
+				LR_size_units                   = 'pixels',
+				LR_minimizeEmbeddedMetadata     = true,
+				LR_collisionHandling            = 'rename',
+				LR_includeVideoFiles            = false,
+			},
+		}
+
+		local rendered
+		for _, rendition in session:renditions() do
+			local success, pathOrMessage = rendition:waitForRender()
+			if success then
+				rendered = pathOrMessage
+			else
+				error(pathOrMessage or 'render failed')
+			end
+		end
+		return rendered
+	end)
+
+	if exportOk and exportResult and LrFileUtils.exists(exportResult) then
+		return exportResult, dir, nil
+	end
+
+	-- Fallback: the cached preview. Fast, but preview-dependent (may be
+	-- low-res for freshly-imported RAW/HEIC). Better than nothing.
+	local data, previewErr, done = nil, nil, false
 	photo:requestJpegThumbnail(size, size, function(jpegData, errorMsg)
-		data, err, done = jpegData, errorMsg, true
+		data, previewErr, done = jpegData, errorMsg, true
 	end)
 
 	local waited = 0
@@ -50,22 +107,21 @@ local function getJpeg(photo, size)
 		waited = waited + 0.1
 	end
 
-	if not data then
-		return nil, nil, (err or 'Could not render a JPEG preview for this photo.')
+	if data then
+		local p = LrPathUtils.child(dir, 'preview.jpg')
+		local fh = io.open(p, 'wb')
+		if fh then
+			fh:write(data)
+			fh:close()
+			return p, dir, nil
+		end
 	end
 
-	local tmpPath = LrPathUtils.child(
-		LrPathUtils.getStandardFilePath('temp'),
-		'pmtagger_' .. tostring(os.time()) .. '_' .. tostring(math.random(1000, 9999)) .. '.jpg')
-
-	local fh, ioErr = io.open(tmpPath, 'wb')
-	if not fh then
-		return data, nil, nil -- still return bytes; Google can run without a file
-	end
-	fh:write(data)
-	fh:close()
-
-	return data, tmpPath, nil
+	pcall(function() LrFileUtils.delete(dir) end)
+	local why = (not exportOk and tostring(exportResult))
+		or previewErr
+		or 'Could not render a JPEG for this photo.'
+	return nil, nil, why
 end
 
 local function displayName(s)
@@ -287,13 +343,14 @@ LrTasks.startAsyncTask(function()
 		-- (HTTP, sleep, dialogs, catalog write) and Lua 5.1 cannot yield across
 		-- a C-level pcall boundary -> "Yielding is not allowed within a C or
 		-- metamethod call".
-		local tmpPath
+		local tmpPath, tmpDir
 		local ok, errMsg = LrFunctionContext.pcallWithContext('pmtagger_run', function()
 
 			progress:setCaption('Rendering image…')
-			local jpegData, path, jErr = getJpeg(photo, 1024)
+			local path, cleanupDir, jErr = getPhotoJpeg(photo, 1600)
 			tmpPath = path
-			if not jpegData then error(jErr or 'Could not read image.') end
+			tmpDir = cleanupDir
+			if not tmpPath then error(jErr or 'Could not read image.') end
 
 			local suggestions = {}
 			local warnings = {}
@@ -358,8 +415,12 @@ LrTasks.startAsyncTask(function()
 
 		progress:done()
 
+		-- Remove the rendered file, then its temp subfolder.
 		if tmpPath and LrFileUtils.exists(tmpPath) then
 			pcall(function() LrFileUtils.delete(tmpPath) end)
+		end
+		if tmpDir and LrFileUtils.exists(tmpDir) then
+			pcall(function() LrFileUtils.delete(tmpDir) end)
 		end
 
 		if not ok then
