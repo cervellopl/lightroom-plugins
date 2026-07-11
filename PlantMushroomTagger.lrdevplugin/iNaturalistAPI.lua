@@ -61,23 +61,28 @@ function iNaturalistAPI.identify(jpegFilePath, token, lat, lng)
 	-- LrHttp.postMultipart( url, content, requestHeaders, timeout, ... )
 	local body, respHeaders = LrHttp.postMultipart(url, content, headers, 30, nil, false)
 
+	local httpCode = tonumber(respHeaders and respHeaders.status)
+
 	if not body then
 		local status = respHeaders and respHeaders.error and respHeaders.error.name or 'unknown'
-		return nil, 'iNaturalist request failed (' .. tostring(status) .. ').'
+		return nil, 'iNaturalist request failed (' .. tostring(status) .. ').', httpCode
 	end
 
 	local ok, parsed = pcall(json.decode, body)
 	if not ok or type(parsed) ~= 'table' then
-		return nil, 'Could not parse iNaturalist response.'
+		return nil, 'Could not parse iNaturalist response.', httpCode
 	end
 
 	-- Auth / quota errors come back as a JSON object with `error` / `status`.
 	if parsed.error or (parsed.status and tonumber(parsed.status) and tonumber(parsed.status) >= 400) then
+		local code = tonumber(parsed.status) or httpCode
 		local msg = parsed.error or ('HTTP ' .. tostring(parsed.status))
-		if tostring(msg):find('401') or tostring(parsed.status or '') == '401' then
-			msg = 'token rejected — paste a fresh one from inaturalist.org/users/api_token'
+		if code == 401 or tostring(msg):find('401') then
+			code = 401
+			msg = 'token rejected — will regenerate'
 		end
-		return nil, 'iNaturalist error: ' .. tostring(msg)
+		-- Third return is the HTTP status so the caller can regenerate on 401.
+		return nil, 'iNaturalist error: ' .. tostring(msg), code
 	end
 
 	if type(parsed.results) ~= 'table' then
