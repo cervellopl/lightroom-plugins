@@ -383,7 +383,20 @@ LrTasks.startAsyncTask(function()
 						lat, lng = gps.latitude, gps.longitude
 					end
 
-					local iRes, iErr = iNaturalistAPI.identify(tmpPath, jwt, lat, lng)
+					local iRes, iErr, iStatus = iNaturalistAPI.identify(tmpPath, jwt, lat, lng)
+
+					-- JWT rejected before its normal expiry -> regenerate once
+					-- and retry, so a stale/revoked token self-heals.
+					if not iRes and iStatus == 401 then
+						progress:setCaption('Regenerating iNaturalist token…')
+						local newJwt, regErr = iNatAuth.regenerateApiToken()
+						if newJwt then
+							iRes, iErr, iStatus = iNaturalistAPI.identify(tmpPath, newJwt, lat, lng)
+						elseif regErr then
+							iErr = regErr
+						end
+					end
+
 					if iRes then
 						for _, s in ipairs(iRes) do table.insert(suggestions, s) end
 					elseif iErr then

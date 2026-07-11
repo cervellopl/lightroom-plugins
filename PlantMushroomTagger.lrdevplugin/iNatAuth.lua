@@ -193,10 +193,13 @@ local function fetchApiToken()
 end
 
 -- Public: return a valid API JWT, refreshing transparently as needed.
+-- Pass forceRefresh = true to regenerate the JWT even if the cached one looks
+-- fresh (used after a mid-session 401, or the manual "Regenerate" button).
 -- Returns (jwt, errorMessage).
-function iNatAuth.getApiToken()
+function iNatAuth.getApiToken(forceRefresh)
 
-	-- Legacy / manual token path: user pasted a JWT directly.
+	-- Legacy / manual token path: user pasted a JWT directly. Nothing to
+	-- regenerate here — the pasted token is whatever it is.
 	if (not iNatAuth.isAuthorized()) and prefs.inatToken and prefs.inatToken ~= '' then
 		return prefs.inatToken, nil
 	end
@@ -205,10 +208,12 @@ function iNatAuth.getApiToken()
 		return nil, 'iNaturalist is not connected. Authorize it in the plugin settings.'
 	end
 
-	-- Use the cached JWT if it is still fresh.
-	local age = prefs.inatApiTokenFetchedAt and (os.time() - prefs.inatApiTokenFetchedAt) or math.huge
-	if prefs.inatApiToken and prefs.inatApiToken ~= '' and age < API_TOKEN_MAX_AGE then
-		return prefs.inatApiToken, nil
+	-- Use the cached JWT if it is still fresh (unless a refresh is forced).
+	if not forceRefresh then
+		local age = prefs.inatApiTokenFetchedAt and (os.time() - prefs.inatApiTokenFetchedAt) or math.huge
+		if prefs.inatApiToken and prefs.inatApiToken ~= '' and age < API_TOKEN_MAX_AGE then
+			return prefs.inatApiToken, nil
+		end
 	end
 
 	-- Fetch a new JWT.
@@ -234,6 +239,15 @@ function iNatAuth.getApiToken()
 	prefs.inatApiToken = jwt
 	prefs.inatApiTokenFetchedAt = os.time()
 	return jwt, nil
+end
+
+-- Public: force a brand-new API JWT (clears the cached one first). Handy for a
+-- "Regenerate token" button, or to recover from a token invalidated before its
+-- normal expiry. Returns (jwt, errorMessage).
+function iNatAuth.regenerateApiToken()
+	prefs.inatApiToken = nil
+	prefs.inatApiTokenFetchedAt = nil
+	return iNatAuth.getApiToken(true)
 end
 
 return iNatAuth

@@ -91,6 +91,25 @@ local function doSignOut(properties)
 	LrDialogs.message('iNaturalist', 'Signed out.', 'info')
 end
 
+-- Force a fresh API token now (clears the cached JWT and re-fetches it).
+local function doRegenerate(properties)
+	LrTasks.startAsyncTask(function()
+		if not (iNatAuth.isAuthorized() or (prefs.inatToken and prefs.inatToken ~= '')) then
+			LrDialogs.message('iNaturalist',
+				'Nothing to regenerate — authorize with OAuth first (or paste a manual token).', 'warning')
+			return
+		end
+		local jwt, err = iNatAuth.regenerateApiToken()
+		properties.inatStatus = statusText()
+		if jwt then
+			LrDialogs.message('iNaturalist', 'A fresh API token was generated successfully.', 'info')
+		else
+			LrDialogs.message('iNaturalist',
+				'Could not regenerate the token:\n\n' .. tostring(err), 'critical')
+		end
+	end)
+end
+
 --------------------------------------------------------------------------------
 
 local function sectionsForTopOfDialog(f, properties)
@@ -163,6 +182,10 @@ local function sectionsForTopOfDialog(f, properties)
 				f:push_button {
 					title = 'Authorize…',
 					action = function() doAuthorize(f, properties) end,
+				},
+				f:push_button {
+					title = 'Regenerate token',
+					action = function() doRegenerate(properties) end,
 				},
 				f:push_button {
 					title = 'Sign out',
